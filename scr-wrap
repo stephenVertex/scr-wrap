@@ -1,0 +1,768 @@
+#!/usr/bin/env -S uv run --script
+#
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["Pillow"]
+# ///
+
+import sys
+import os
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import argparse
+
+def create_rounded_rectangle_mask(size, radius):
+    """Create a mask for rounded corners"""
+    width, height = size
+    mask = Image.new('L', size, 0)
+    draw = ImageDraw.Draw(mask)
+    
+    # Draw the main rectangle
+    draw.rectangle([radius, 0, width - radius, height], fill=255)
+    draw.rectangle([0, radius, width, height - radius], fill=255)
+    
+    # Draw corner circles
+    draw.ellipse([0, 0, radius * 2, radius * 2], fill=255)
+    draw.ellipse([width - radius * 2, 0, width, radius * 2], fill=255)
+    draw.ellipse([0, height - radius * 2, radius * 2, height], fill=255)
+    draw.ellipse([width - radius * 2, height - radius * 2, width, height], fill=255)
+    
+    return mask
+
+def get_background_path(background_name):
+    """Get the full path for a named background or return as-is if it's a file path"""
+    if not background_name:
+        return None
+    
+    # Check if it's already a file path
+    if os.path.exists(background_name):
+        return background_name
+    
+    # Check for named backgrounds in the backgrounds folder
+    # If script is installed globally, look in the original source location
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Check if this is an installed version (in .local/bin)
+    if script_dir.endswith('.local/bin') or script_dir.endswith('/bin'):
+        # Look for backgrounds in the expected source location
+        backgrounds_dir = os.path.join(os.path.expanduser('~'), 'util', 'scr-wrap', 'backgrounds')
+        if not os.path.exists(backgrounds_dir):
+            # Fallback to script directory
+            backgrounds_dir = os.path.join(script_dir, 'backgrounds')
+    else:
+        backgrounds_dir = os.path.join(script_dir, 'backgrounds')
+    
+    # Map of background names to files
+    backgrounds = {
+        'gradient': 'gradient.jpg',
+        'blue': 'gradient.jpg',  # Alias for gradient
+        'default': 'gradient.jpg',  # Alias for gradient
+        'mixtone': '03-mixtone.jpg',
+        'colorful': 'green-yellow-pink.jpg',
+        'rainbow': 'green-yellow-pink.jpg',  # Alias for colorful
+        'warm': '03-mixtone.jpg',  # Alias for mixtone
+        'blurred': 'blurred-abstract-background.jpg',
+        'abstract': 'blurred-abstract-background.jpg',  # Alias for blurred
+    }
+    
+    if background_name.lower() in backgrounds:
+        bg_path = os.path.join(backgrounds_dir, backgrounds[background_name.lower()])
+        if os.path.exists(bg_path):
+            return bg_path
+        else:
+            print(f"Warning: Background '{background_name}' not found at {bg_path}")
+    
+    # Try as a filename in the backgrounds directory
+    bg_path = os.path.join(backgrounds_dir, background_name)
+    if os.path.exists(bg_path):
+        return bg_path
+    
+    # Try with .jpg extension
+    bg_path = os.path.join(backgrounds_dir, f"{background_name}.jpg")
+    if os.path.exists(bg_path):
+        return bg_path
+    
+    print(f"Warning: Background '{background_name}' not found")
+    return None
+
+def create_torn_edge(width, tear_height=50):
+    """Create a torn paper edge mask with wide triangular tears"""
+    import random
+    random.seed(42)  # For consistent results
+    
+    # Create mask for torn edge
+    mask = Image.new('L', (width, tear_height), 0)
+    draw = ImageDraw.Draw(mask)
+    
+    # Start with base rectangle - smaller base for more dramatic tears
+    base_height = int(tear_height * 0.2)
+    draw.rectangle([0, 0, width, base_height], fill=255)
+    
+    # Generate wide triangular tears with much more variation
+    x = 0
+    while x < width:
+        # Random triangle width
+        triangle_width = random.randint(15, 45)
+        
+        # Much more dramatic depth variations
+        rand = random.random()
+        if rand < 0.15:  # 15% extremely deep tears
+            depth = random.randint(int(tear_height * 0.85), tear_height)
+        elif rand < 0.25:  # 10% very deep tears
+            depth = random.randint(int(tear_height * 0.7), int(tear_height * 0.85))
+        elif rand < 0.45:  # 20% deep tears
+            depth = random.randint(int(tear_height * 0.5), int(tear_height * 0.7))
+        elif rand < 0.70:  # 25% medium tears
+            depth = random.randint(int(tear_height * 0.3), int(tear_height * 0.5))
+        else:  # 30% shallow tears
+            depth = random.randint(base_height + 5, int(tear_height * 0.3))
+        
+        # Create triangular tear pointing downward
+        triangle_points = [
+            (x, base_height),  # Top left
+            (min(x + triangle_width, width), base_height),  # Top right
+            (x + triangle_width // 2, depth)  # Bottom point (tear tip)
+        ]
+        
+        # Add more randomness to triangle shape
+        triangle_points[2] = (
+            triangle_points[2][0] + random.randint(-5, 5),  # More horizontal offset
+            triangle_points[2][1] + random.randint(-3, 3)   # More vertical offset
+        )
+        
+        draw.polygon(triangle_points, fill=255)
+        
+        # Move to next triangle with more variation in spacing
+        x += triangle_width + random.randint(-8, 8)
+    
+    # Add more varied secondary tears
+    for _ in range(width // 50):
+        tear_x = random.randint(10, width - 15)
+        tear_width = random.randint(8, 20)
+        
+        # More varied secondary tear depths
+        if random.random() < 0.3:
+            tear_depth = random.randint(15, 25)  # Deeper secondary tears
+        else:
+            tear_depth = random.randint(5, 15)
+        
+        # Small triangular notch
+        small_triangle = [
+            (tear_x, base_height),
+            (tear_x + tear_width, base_height),
+            (tear_x + tear_width // 2, base_height + tear_depth)
+        ]
+        draw.polygon(small_triangle, fill=255)
+    
+    return mask
+
+def create_natural_torn_edge(width, tear_height=50):
+    """Create a Snagit-style torn paper edge mask with clean irregular curves"""
+    import random
+    random.seed(42)  # For consistent results
+    
+    # Create mask for torn edge
+    mask = Image.new('L', (width, tear_height), 0)
+    draw = ImageDraw.Draw(mask)
+    
+    # Start with substantial base rectangle
+    base_height = int(tear_height * 0.3)
+    draw.rectangle([0, 0, width, base_height], fill=255)
+    
+    # Generate clean irregular tear line using larger, smoother segments
+    points = []
+    step_min = 15  # Larger steps for cleaner appearance
+    step_max = 40
+    
+    # Generate x positions with random intervals
+    x_positions = [0]
+    x = 0
+    while x < width:
+        step = random.randint(step_min, step_max)
+        x += step
+        if x < width:
+            x_positions.append(x)
+    
+    # Ensure we end at the right edge
+    if x_positions[-1] != width:
+        x_positions.append(width)
+    
+    # Generate smooth, controlled y variations
+    for x in x_positions:
+        # More controlled depth variations for cleaner look
+        rand = random.random()
+        if rand < 0.1:  # 10% deep tears
+            depth_factor = random.uniform(0.6, 0.8)
+        elif rand < 0.3:  # 20% medium tears
+            depth_factor = random.uniform(0.4, 0.6)
+        elif rand < 0.7:  # 40% shallow tears
+            depth_factor = random.uniform(0.2, 0.4)
+        else:  # 30% very shallow
+            depth_factor = random.uniform(0.05, 0.2)
+        
+        tear_depth = int(tear_height * depth_factor)
+        y = base_height + tear_depth
+        
+        # Minimal horizontal jitter for cleaner edges
+        x_jitter = random.randint(-1, 1) if x > 0 and x < width else 0
+        actual_x = min(max(x + x_jitter, 0), width)
+        
+        points.append((actual_x, y))
+    
+    # Draw clean segments between points
+    for i in range(len(points) - 1):
+        polygon_points = [
+            (points[i][0], base_height),
+            (points[i+1][0], base_height),
+            points[i+1],
+            points[i]
+        ]
+        draw.polygon(polygon_points, fill=255)
+    
+    # Add minimal, clean details - much less noisy
+    for i in range(0, width, 25):  # Much less frequent
+        if random.random() < 0.2:  # Only 20% chance
+            # Create clean, simple notches
+            notch_width = random.randint(8, 16)
+            notch_depth = random.randint(3, 8)  # Shallower
+            
+            # Get y position at this x
+            y_base = base_height
+            for j, (px, py) in enumerate(points):
+                if px >= i:
+                    if j > 0:
+                        prev_x, prev_y = points[j-1]
+                        ratio = (i - prev_x) / (px - prev_x) if px != prev_x else 0
+                        y_base = int(prev_y + ratio * (py - prev_y))
+                    else:
+                        y_base = py
+                    break
+            
+            # Simple clean notch
+            notch_points = [
+                (i, y_base),
+                (i + notch_width//2, y_base + notch_depth),
+                (i + notch_width, y_base)
+            ]
+            
+            if all(0 <= p[0] <= width and 0 <= p[1] <= tear_height for p in notch_points):
+                draw.polygon(notch_points, fill=255)
+    
+    return mask
+
+def create_fade_edge(width, fade_height=80):
+    """Create a fade to transparency mask for bottom edge"""
+    mask = Image.new('L', (width, fade_height), 0)
+    
+    # Create a gradient from opaque (255) at the top to transparent (0) at the bottom
+    for y in range(fade_height):
+        # Calculate opacity: starts at 255 (opaque) and fades to 0 (transparent)
+        opacity = int(255 * (1 - (y / fade_height)))
+        # Draw horizontal line with calculated opacity
+        for x in range(width):
+            mask.putpixel((x, y), opacity)
+    
+    return mask
+
+def create_browser_frame(screenshot_path, output_path=None, url="https://example.com", background_path=None, torn_edge=False, torn_natural=False, fade_edge=False, drop_shadow=False):
+    """
+    Wrap a screenshot in a browser frame and save as a new image
+    """
+    
+    # Load the screenshot
+    try:
+        screenshot = Image.open(screenshot_path)
+    except Exception as e:
+        print(f"Error loading image: {e}")
+        return False
+    
+    # Browser frame dimensions
+    frame_height = 96  # 20% shorter (120 * 0.8)
+    toolbar_height = 96
+    
+    # Calculate new image dimensions
+    new_width = screenshot.width
+    new_height = screenshot.height + frame_height
+    
+    # Create new image with browser frame
+    framed_image = Image.new('RGB', (new_width, new_height), '#f6f6f6')
+    
+    # Draw the browser header background
+    draw = ImageDraw.Draw(framed_image)
+    
+    # Draw single toolbar background (Safari style - darker shade)
+    draw.rectangle([0, 0, new_width, frame_height], fill='#f0f0f0')
+    
+    # Draw traffic lights (Safari positioning - larger size)
+    traffic_light_y = frame_height // 2
+    traffic_light_radius = 10
+    
+    # Red light
+    draw.ellipse([28, traffic_light_y - traffic_light_radius, 
+                  28 + traffic_light_radius * 2, traffic_light_y + traffic_light_radius], 
+                 fill='#ff5f56')
+    
+    # Yellow light  
+    draw.ellipse([60, traffic_light_y - traffic_light_radius,
+                  60 + traffic_light_radius * 2, traffic_light_y + traffic_light_radius],
+                 fill='#ffbd2e')
+    
+    # Green light
+    draw.ellipse([92, traffic_light_y - traffic_light_radius,
+                  92 + traffic_light_radius * 2, traffic_light_y + traffic_light_radius],
+                 fill='#27ca3f')
+    
+    
+    # Address bar (Safari style - narrower to match reference)
+    address_bar_width = int(new_width * 0.35)  # About 35% of total width
+    address_bar_x = (new_width - address_bar_width) // 2  # Centered
+    address_bar_y = frame_height // 2 - 22  # Center vertically
+    address_bar_height = 44
+    
+    # Address bar with Safari styling
+    draw.rounded_rectangle([address_bar_x, address_bar_y, 
+                           address_bar_x + address_bar_width, address_bar_y + address_bar_height],
+                          radius=8, fill='#f5f5f5', outline='#d1d1d1')
+    
+    # Add URL text (centered in address bar)
+    try:
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 28)
+        except:
+            font = ImageFont.load_default()
+        
+        # Calculate text width to center it
+        bbox = draw.textbbox((0, 0), url, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_x = address_bar_x + (address_bar_width - text_width) // 2
+        
+        draw.text((text_x, address_bar_y + 8), 
+                 url, fill='#666666', font=font)
+    except:
+        # Fallback for default font - approximate centering
+        text_width = len(url) * 6  # Rough estimate for default font
+        text_x = address_bar_x + (address_bar_width - text_width) // 2
+        draw.text((text_x, address_bar_y + 10), 
+                 url, fill='#666666')
+    
+    
+    # Draw bottom border of header
+    draw.line([(0, frame_height - 1), (new_width, frame_height - 1)], fill='#d1d1d1')
+    
+    # Paste the screenshot below the frame
+    framed_image.paste(screenshot, (0, frame_height))
+    
+    # Apply torn edge effect if requested
+    if torn_edge:
+        # Create torn edge mask for the bottom of the main image
+        tear_height = 50
+        tear_mask = create_torn_edge(framed_image.width, tear_height)
+        
+        # Convert framed image to RGBA for transparency
+        framed_rgba = framed_image.convert('RGBA')
+        
+        # Create a mask for the entire image
+        full_mask = Image.new('L', framed_image.size, 255)
+        
+        # Apply the torn edge to the bottom of the mask
+        # The torn edge mask should be used directly (not inverted)
+        # where 255 = opaque and 0 = transparent
+        full_mask.paste(tear_mask, (0, framed_image.height - tear_height))
+        
+        # Apply the mask to make torn areas transparent
+        framed_rgba.putalpha(full_mask)
+        framed_image = framed_rgba
+    
+    # Apply natural torn edge effect if requested
+    elif torn_natural:
+        # Create natural torn edge mask for the bottom of the main image
+        tear_height = 50
+        tear_mask = create_natural_torn_edge(framed_image.width, tear_height)
+        
+        # Convert framed image to RGBA for transparency
+        framed_rgba = framed_image.convert('RGBA')
+        
+        # Create a mask for the entire image
+        full_mask = Image.new('L', framed_image.size, 255)
+        
+        # Apply the natural torn edge to the bottom of the mask
+        full_mask.paste(tear_mask, (0, framed_image.height - tear_height))
+        
+        # Apply the mask to make torn areas transparent
+        framed_rgba.putalpha(full_mask)
+        framed_image = framed_rgba
+    
+    # Apply fade edge effect if requested
+    elif fade_edge:
+        # Create fade edge mask for the bottom of the main image
+        fade_height = 80
+        fade_mask = create_fade_edge(framed_image.width, fade_height)
+        
+        # Convert framed image to RGBA for transparency
+        framed_rgba = framed_image.convert('RGBA')
+        
+        # Create a mask for the entire image (start with fully opaque)
+        full_mask = Image.new('L', framed_image.size, 255)
+        
+        # Apply the fade edge to the bottom of the mask
+        full_mask.paste(fade_mask, (0, framed_image.height - fade_height))
+        
+        # Apply the mask to create fade effect
+        framed_rgba.putalpha(full_mask)
+        framed_image = framed_rgba
+    
+    # If background is specified, compose the window on it
+    resolved_bg_path = get_background_path(background_path)
+    if resolved_bg_path:
+        try:
+            # Load background
+            background = Image.open(resolved_bg_path)
+            
+            # Create rounded corners for the browser window
+            corner_radius = 12
+            
+            # Handle both RGB and RGBA images
+            if framed_image.mode == 'RGBA':
+                rounded_window = framed_image.copy()
+                # Apply rounded corners to existing alpha channel
+                if torn_edge or torn_natural or fade_edge:
+                    # For torn edge, natural torn edge, or fade edge, we already have transparency, just add rounded corners to top
+                    current_alpha = rounded_window.split()[-1]
+                    corner_mask = create_rounded_rectangle_mask(framed_image.size, corner_radius)
+                    # Combine the existing alpha with rounded corners
+                    combined_alpha = Image.new('L', framed_image.size, 255)
+                    combined_alpha.paste(current_alpha, (0, 0))
+                    # Apply rounded corners only to the top part
+                    for y in range(min(corner_radius * 2, framed_image.height)):
+                        for x in range(framed_image.width):
+                            corner_val = corner_mask.getpixel((x, y))
+                            current_val = combined_alpha.getpixel((x, y))
+                            combined_alpha.putpixel((x, y), min(corner_val, current_val))
+                    rounded_window.putalpha(combined_alpha)
+                else:
+                    mask = create_rounded_rectangle_mask(framed_image.size, corner_radius)
+                    rounded_window.putalpha(mask)
+            else:
+                # Convert RGB to RGBA and apply rounded corners
+                rounded_window = framed_image.convert('RGBA')
+                mask = create_rounded_rectangle_mask(framed_image.size, corner_radius)
+                rounded_window.putalpha(mask)
+            
+            # Calculate position to center the window with larger border for more gradient
+            border = 100  # Doubled from 50px to show more gradient
+            bg_width, bg_height = background.size
+            window_width, window_height = framed_image.size
+            
+            # Resize background if needed to fit window + borders
+            min_bg_width = window_width + (border * 2)
+            min_bg_height = window_height + (border * 2)
+            
+            if bg_width < min_bg_width or bg_height < min_bg_height:
+                # Scale background up to fit
+                scale = max(min_bg_width / bg_width, min_bg_height / bg_height)
+                new_bg_width = int(bg_width * scale)
+                new_bg_height = int(bg_height * scale)
+                background = background.resize((new_bg_width, new_bg_height), Image.Resampling.LANCZOS)
+                bg_width, bg_height = new_bg_width, new_bg_height
+            
+            # Crop background to exact size needed
+            final_width = window_width + (border * 2)
+            final_height = window_height + (border * 2)
+            
+            # Center crop if background is larger
+            if bg_width > final_width or bg_height > final_height:
+                left = (bg_width - final_width) // 2
+                top = (bg_height - final_height) // 2
+                background = background.crop((left, top, left + final_width, top + final_height))
+            
+            # Create final composite
+            final_image = background.convert('RGB')
+            
+            # Add drop shadow if requested
+            if drop_shadow:
+                # Create shadow
+                shadow_offset = 12
+                shadow_blur = 20
+                shadow = Image.new('RGBA', (window_width + shadow_blur * 2, window_height + shadow_blur * 2), (0, 0, 0, 0))
+                shadow_draw = ImageDraw.Draw(shadow)
+                
+                # Draw shadow rectangle
+                shadow_draw.rounded_rectangle([shadow_blur, shadow_blur, 
+                                             window_width + shadow_blur, window_height + shadow_blur],
+                                            radius=corner_radius, fill=(0, 0, 0, 80))
+                
+                # Apply blur to shadow
+                shadow = shadow.filter(ImageFilter.GaussianBlur(radius=shadow_blur//2))
+                
+                # Paste shadow first (offset)
+                shadow_x = border + shadow_offset - shadow_blur
+                shadow_y = border + shadow_offset - shadow_blur
+                final_image.paste(shadow, (shadow_x, shadow_y), shadow)
+            
+            # Paste the rounded window on top
+            final_image.paste(rounded_window, (border, border), rounded_window)
+            
+            framed_image = final_image
+            
+        except Exception as e:
+            print(f"Warning: Could not apply background ({e}), using plain window")
+    
+    # Determine output filename
+    if output_path is None:
+        base, ext = os.path.splitext(screenshot_path)
+        output_path = f"{base}.wrapped{ext}"
+    
+    # Save the result
+    try:
+        framed_image.save(output_path, quality=95)
+        print(f"Wrapped screenshot saved as: {output_path}")
+        return True
+    except Exception as e:
+        print(f"Error saving image: {e}")
+        return False
+
+def apply_effects_only(screenshot_path, output_path=None, background_path=None, torn_edge=False, torn_natural=False, fade_edge=False, drop_shadow=False):
+    """
+    Apply effects to screenshot without browser frame wrapper
+    """
+    
+    # Load the screenshot
+    try:
+        screenshot = Image.open(screenshot_path)
+    except Exception as e:
+        print(f"Error loading image: {e}")
+        return False
+    
+    # Start with the original screenshot
+    processed_image = screenshot.copy()
+    
+    # Apply torn edge effect if requested
+    if torn_edge:
+        # Create torn edge mask for the bottom of the image
+        tear_height = 50
+        tear_mask = create_torn_edge(processed_image.width, tear_height)
+        
+        # Convert to RGBA for transparency
+        processed_rgba = processed_image.convert('RGBA')
+        
+        # Create a mask for the entire image
+        full_mask = Image.new('L', processed_image.size, 255)
+        
+        # Apply the torn edge to the bottom of the mask
+        full_mask.paste(tear_mask, (0, processed_image.height - tear_height))
+        
+        # Apply the mask to make torn areas transparent
+        processed_rgba.putalpha(full_mask)
+        processed_image = processed_rgba
+    
+    # Apply natural torn edge effect if requested
+    elif torn_natural:
+        # Create natural torn edge mask for the bottom of the image
+        tear_height = 50
+        tear_mask = create_natural_torn_edge(processed_image.width, tear_height)
+        
+        # Convert to RGBA for transparency
+        processed_rgba = processed_image.convert('RGBA')
+        
+        # Create a mask for the entire image
+        full_mask = Image.new('L', processed_image.size, 255)
+        
+        # Apply the natural torn edge to the bottom of the mask
+        full_mask.paste(tear_mask, (0, processed_image.height - tear_height))
+        
+        # Apply the mask to make torn areas transparent
+        processed_rgba.putalpha(full_mask)
+        processed_image = processed_rgba
+    
+    # Apply fade edge effect if requested
+    elif fade_edge:
+        # Create fade edge mask for the bottom of the image
+        fade_height = 80
+        fade_mask = create_fade_edge(processed_image.width, fade_height)
+        
+        # Convert to RGBA for transparency
+        processed_rgba = processed_image.convert('RGBA')
+        
+        # Create a mask for the entire image (start with fully opaque)
+        full_mask = Image.new('L', processed_image.size, 255)
+        
+        # Apply the fade edge to the bottom of the mask
+        full_mask.paste(fade_mask, (0, processed_image.height - fade_height))
+        
+        # Apply the mask to create fade effect
+        processed_rgba.putalpha(full_mask)
+        processed_image = processed_rgba
+    
+    # If background is specified, compose the image on it
+    resolved_bg_path = get_background_path(background_path)
+    if resolved_bg_path:
+        try:
+            # Load background
+            background = Image.open(resolved_bg_path)
+            
+            # Create rounded corners for the image
+            corner_radius = 12
+            
+            # Handle both RGB and RGBA images
+            if processed_image.mode == 'RGBA':
+                rounded_image = processed_image.copy()
+                # Apply rounded corners to existing alpha channel
+                if torn_edge or torn_natural or fade_edge:
+                    # For torn edge, natural torn edge, or fade edge, we already have transparency, just add rounded corners to top
+                    current_alpha = rounded_image.split()[-1]
+                    corner_mask = create_rounded_rectangle_mask(processed_image.size, corner_radius)
+                    # Combine the existing alpha with rounded corners
+                    combined_alpha = Image.new('L', processed_image.size, 255)
+                    combined_alpha.paste(current_alpha, (0, 0))
+                    # Apply rounded corners only to the top part
+                    for y in range(min(corner_radius * 2, processed_image.height)):
+                        for x in range(processed_image.width):
+                            corner_val = corner_mask.getpixel((x, y))
+                            current_val = combined_alpha.getpixel((x, y))
+                            combined_alpha.putpixel((x, y), min(corner_val, current_val))
+                    rounded_image.putalpha(combined_alpha)
+                else:
+                    mask = create_rounded_rectangle_mask(processed_image.size, corner_radius)
+                    rounded_image.putalpha(mask)
+            else:
+                # Convert RGB to RGBA and apply rounded corners
+                rounded_image = processed_image.convert('RGBA')
+                mask = create_rounded_rectangle_mask(processed_image.size, corner_radius)
+                rounded_image.putalpha(mask)
+            
+            # Calculate position to center the image with larger border for more gradient
+            border = 100
+            bg_width, bg_height = background.size
+            image_width, image_height = processed_image.size
+            
+            # Resize background if needed to fit image + borders
+            min_bg_width = image_width + (border * 2)
+            min_bg_height = image_height + (border * 2)
+            
+            if bg_width < min_bg_width or bg_height < min_bg_height:
+                # Scale background up to fit
+                scale = max(min_bg_width / bg_width, min_bg_height / bg_height)
+                new_bg_width = int(bg_width * scale)
+                new_bg_height = int(bg_height * scale)
+                background = background.resize((new_bg_width, new_bg_height), Image.Resampling.LANCZOS)
+                bg_width, bg_height = new_bg_width, new_bg_height
+            
+            # Crop background to exact size needed
+            final_width = image_width + (border * 2)
+            final_height = image_height + (border * 2)
+            
+            # Center crop if background is larger
+            if bg_width > final_width or bg_height > final_height:
+                left = (bg_width - final_width) // 2
+                top = (bg_height - final_height) // 2
+                background = background.crop((left, top, left + final_width, top + final_height))
+            
+            # Create final composite
+            final_image = background.convert('RGB')
+            
+            # Add drop shadow if requested
+            if drop_shadow:
+                # Create shadow
+                shadow_offset = 12
+                shadow_blur = 20
+                shadow = Image.new('RGBA', (image_width + shadow_blur * 2, image_height + shadow_blur * 2), (0, 0, 0, 0))
+                shadow_draw = ImageDraw.Draw(shadow)
+                
+                # Draw shadow rectangle
+                shadow_draw.rounded_rectangle([shadow_blur, shadow_blur, 
+                                             image_width + shadow_blur, image_height + shadow_blur],
+                                            radius=corner_radius, fill=(0, 0, 0, 80))
+                
+                # Apply blur to shadow
+                shadow = shadow.filter(ImageFilter.GaussianBlur(radius=shadow_blur//2))
+                
+                # Paste shadow first (offset)
+                shadow_x = border + shadow_offset - shadow_blur
+                shadow_y = border + shadow_offset - shadow_blur
+                final_image.paste(shadow, (shadow_x, shadow_y), shadow)
+            
+            # Paste the rounded image on top
+            final_image.paste(rounded_image, (border, border), rounded_image)
+            
+            processed_image = final_image
+            
+        except Exception as e:
+            print(f"Warning: Could not apply background ({e}), using plain image")
+    
+    # Determine output filename
+    if output_path is None:
+        base, ext = os.path.splitext(screenshot_path)
+        output_path = f"{base}.effects{ext}"
+    
+    # Save the result
+    try:
+        processed_image.save(output_path, quality=95)
+        print(f"Effects applied and saved as: {output_path}")
+        return True
+    except Exception as e:
+        print(f"Error saving image: {e}")
+        return False
+
+def main():
+    parser = argparse.ArgumentParser(description='Wrap a screenshot in a browser frame')
+    parser.add_argument('input', nargs='?', help='Input screenshot file')
+    parser.add_argument('-o', '--output', help='Output file (default: input.wrapped.ext)')
+    parser.add_argument('-u', '--url', default='https://cloudfix.com', 
+                       help='URL to display in address bar (default: https://cloudfix.com)')
+    parser.add_argument('-b', '--background', 
+                       help='Background name (gradient, blue, mixtone, colorful, rainbow, warm) or path to image file for macOS-style desktop view')
+    parser.add_argument('-t', '--torn', action='store_true',
+                       help='Add torn paper edge effect at the bottom')
+    parser.add_argument('-t2', '--torn-natural', action='store_true',
+                       help='Add natural torn paper edge effect at the bottom (more organic curves)')
+    parser.add_argument('-f', '--fade', action='store_true',
+                       help='Add fade to transparency effect at the bottom to suggest content continues')
+    parser.add_argument('-s', '--shadow', action='store_true',
+                       help='Add drop shadow effect to the browser window')
+    parser.add_argument('--list-backgrounds', action='store_true',
+                       help='List all available background options and exit')
+    parser.add_argument('--no-browser', action='store_true',
+                       help='Skip browser frame wrapper, apply only effects like drop shadow')
+    
+    args = parser.parse_args()
+    
+    # Handle --list-backgrounds flag
+    if args.list_backgrounds:
+        print("Available background options:")
+        print()
+        print("Built-in gradients:")
+        print("  gradient    - Original blue gradient")
+        print("  mixtone     - Warm mixed-tone gradient")
+        print("  colorful    - Green-yellow-pink gradient")
+        print("  blurred     - Blurred abstract background")
+        print()
+        print("Aliases:")
+        print("  blue        - Same as 'gradient'")
+        print("  default     - Same as 'gradient'")
+        print("  rainbow     - Same as 'colorful'")
+        print("  warm        - Same as 'mixtone'")
+        print("  abstract    - Same as 'blurred'")
+        print()
+        print("Custom backgrounds:")
+        print("  You can also provide a path to any image file")
+        print()
+        print("Examples:")
+        print("  ./scr-wrap image.png -b gradient")
+        print("  ./scr-wrap image.png -b mixtone -s")
+        print("  ./scr-wrap image.png -b /path/to/custom-bg.jpg")
+        sys.exit(0)
+    
+    if not args.input:
+        parser.error("Input file is required (unless using --list-backgrounds)")
+    
+    if not os.path.exists(args.input):
+        print(f"Error: File '{args.input}' not found")
+        sys.exit(1)
+    
+    if args.no_browser:
+        success = apply_effects_only(args.input, args.output, args.background, args.torn, args.torn_natural, args.fade, args.shadow)
+    else:
+        success = create_browser_frame(args.input, args.output, args.url, args.background, args.torn, args.torn_natural, args.fade, args.shadow)
+    sys.exit(0 if success else 1)
+
+if __name__ == '__main__':
+    main()
