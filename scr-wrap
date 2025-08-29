@@ -703,9 +703,9 @@ def apply_effects_only(screenshot_path, output_path=None, background_path=None, 
         return False
 
 def main():
-    parser = argparse.ArgumentParser(description='Wrap a screenshot in a browser frame')
-    parser.add_argument('input', nargs='?', help='Input screenshot file')
-    parser.add_argument('-o', '--output', help='Output file (default: input.wrapped.ext)')
+    parser = argparse.ArgumentParser(description='Wrap screenshots in browser frames')
+    parser.add_argument('input', nargs='*', help='Input screenshot file(s) or pattern')
+    parser.add_argument('-o', '--output', help='Output file (only for single input, default: input.wrapped.ext)')
     parser.add_argument('-u', '--url', default='https://cloudfix.com', 
                        help='URL to display in address bar (default: https://cloudfix.com)')
     parser.add_argument('-b', '--background', 
@@ -749,20 +749,55 @@ def main():
         print("  ./scr-wrap image.png -b gradient")
         print("  ./scr-wrap image.png -b mixtone -s")
         print("  ./scr-wrap image.png -b /path/to/custom-bg.jpg")
+        print("  ./scr-wrap water*.png -b gradient  # Process multiple files")
         sys.exit(0)
     
     if not args.input:
-        parser.error("Input file is required (unless using --list-backgrounds)")
+        parser.error("Input file(s) required (unless using --list-backgrounds)")
     
-    if not os.path.exists(args.input):
-        print(f"Error: File '{args.input}' not found")
+    # Expand glob patterns and collect all input files
+    import glob
+    input_files = []
+    for pattern in args.input:
+        matches = glob.glob(pattern)
+        if matches:
+            input_files.extend(matches)
+        elif os.path.exists(pattern):
+            # If no glob match but file exists, add it directly
+            input_files.append(pattern)
+        else:
+            print(f"Warning: No files found matching '{pattern}'")
+    
+    if not input_files:
+        print("Error: No input files found")
         sys.exit(1)
     
-    if args.no_browser:
-        success = apply_effects_only(args.input, args.output, args.background, args.torn, args.torn_natural, args.fade, args.shadow)
-    else:
-        success = create_browser_frame(args.input, args.output, args.url, args.background, args.torn, args.torn_natural, args.fade, args.shadow)
-    sys.exit(0 if success else 1)
+    # Check if output is specified with multiple inputs
+    if args.output and len(input_files) > 1:
+        print("Error: Cannot specify output file when processing multiple inputs")
+        sys.exit(1)
+    
+    # Process each file
+    total_success = True
+    for input_file in input_files:
+        if not os.path.exists(input_file):
+            print(f"Error: File '{input_file}' not found")
+            total_success = False
+            continue
+        
+        # Determine output for this file
+        output_file = args.output if len(input_files) == 1 else None
+        
+        print(f"Processing: {input_file}")
+        if args.no_browser:
+            success = apply_effects_only(input_file, output_file, args.background, args.torn, args.torn_natural, args.fade, args.shadow)
+        else:
+            success = create_browser_frame(input_file, output_file, args.url, args.background, args.torn, args.torn_natural, args.fade, args.shadow)
+        
+        if not success:
+            total_success = False
+    
+    sys.exit(0 if total_success else 1)
 
 if __name__ == '__main__':
     main()
