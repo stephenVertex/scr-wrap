@@ -28,10 +28,29 @@ def create_rounded_rectangle_mask(size, radius):
     
     return mask
 
+def create_solid_color_background(color, size=(2000, 1500)):
+    """Create a solid color background image"""
+    if color == 'green':
+        # Standard chroma key green
+        return Image.new('RGB', size, '#00FF00')
+    elif color == 'blue':
+        # Chroma key blue
+        return Image.new('RGB', size, '#0000FF')
+    else:
+        # Try to parse as hex color
+        try:
+            return Image.new('RGB', size, color)
+        except:
+            return None
+
 def get_background_path(background_name):
     """Get the full path for a named background or return as-is if it's a file path"""
     if not background_name:
         return None
+    
+    # Check for special solid color backgrounds
+    if background_name.lower() in ['green', 'greenscreen', 'chroma', 'chromakey']:
+        return 'SOLID:green'
     
     # Check if it's already a file path
     if os.path.exists(background_name):
@@ -63,6 +82,14 @@ def get_background_path(background_name):
         'blurred': 'blurred-abstract-background.jpg',
         'abstract': 'blurred-abstract-background.jpg',  # Alias for blurred
     }
+    
+    # Add fractal backgrounds (fractal-01 through fractal-40)
+    for i in range(1, 41):
+        fractal_name = f'fractal-{i:02d}'
+        fractal_file = f'Fractal-Glass-Gradients/product-files/{fractal_name}.jpg'
+        backgrounds[fractal_name] = fractal_file
+        # Also add without leading zero for convenience (e.g., fractal-1)
+        backgrounds[f'fractal-{i}'] = fractal_file
     
     if background_name.lower() in backgrounds:
         bg_path = os.path.join(backgrounds_dir, backgrounds[background_name.lower()])
@@ -414,8 +441,20 @@ def create_browser_frame(screenshot_path, output_path=None, url="https://example
     resolved_bg_path = get_background_path(background_path)
     if resolved_bg_path:
         try:
-            # Load background
-            background = Image.open(resolved_bg_path)
+            # Check if it's a solid color background
+            if resolved_bg_path.startswith('SOLID:'):
+                color_name = resolved_bg_path.split(':')[1]
+                # Create solid color background sized appropriately for the window
+                window_width, window_height = framed_image.size
+                border = 100
+                bg_size = (window_width + (border * 2), window_height + (border * 2))
+                background = create_solid_color_background(color_name, bg_size)
+                if not background:
+                    print(f"Error: Could not create solid color background '{color_name}'")
+                    return False
+            else:
+                # Load background from file
+                background = Image.open(resolved_bg_path)
             
             # Create rounded corners for the browser window
             corner_radius = 12
@@ -735,6 +774,10 @@ def main():
         print("  colorful    - Green-yellow-pink gradient")
         print("  blurred     - Blurred abstract background")
         print()
+        print("Fractal Glass Gradients (40 backgrounds):")
+        print("  fractal-1 through fractal-40")
+        print("  fractal-01 through fractal-40 (with leading zeros)")
+        print()
         print("Aliases:")
         print("  blue        - Same as 'gradient'")
         print("  default     - Same as 'gradient'")
@@ -747,9 +790,10 @@ def main():
         print()
         print("Examples:")
         print("  ./scr-wrap image.png -b gradient")
+        print("  ./scr-wrap image.png -b fractal-7")
         print("  ./scr-wrap image.png -b mixtone -s")
         print("  ./scr-wrap image.png -b /path/to/custom-bg.jpg")
-        print("  ./scr-wrap water*.png -b gradient  # Process multiple files")
+        print("  ./scr-wrap water*.png -b fractal-15  # Process multiple files")
         sys.exit(0)
     
     if not args.input:
