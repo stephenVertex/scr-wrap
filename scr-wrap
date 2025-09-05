@@ -91,6 +91,21 @@ def get_background_path(background_name):
         # Also add without leading zero for convenience (e.g., fractal-1)
         backgrounds[f'fractal-{i}'] = fractal_file
     
+    # Add noise texture backgrounds
+    noise_textures = {
+        'noise-gray': 'noise-textures/JPG/1000x1000/01-gray.jpg',
+        'noise-slate': 'noise-textures/JPG/1000x1000/02-slate.jpg', 
+        'noise-brown': 'noise-textures/JPG/1000x1000/03-brown.jpg',
+        'noise-dark-green': 'noise-textures/JPG/1000x1000/04-dark-green.jpg',
+        'noise-forest-green': 'noise-textures/JPG/1000x1000/05-forest-green.jpg',
+        'noise-blue-green': 'noise-textures/JPG/1000x1000/06-blue-green.jpg',
+        'noise-dark-blue': 'noise-textures/JPG/1000x1000/07-dark-blue.jpg',
+        'noise-purple': 'noise-textures/JPG/1000x1000/08-purple.jpg',
+        'noise-more-purple': 'noise-textures/JPG/1000x1000/09-more-purple.jpg',
+        'noise-maroon': 'noise-textures/JPG/1000x1000/10-maroon.jpg',
+    }
+    backgrounds.update(noise_textures)
+    
     if background_name.lower() in backgrounds:
         bg_path = os.path.join(backgrounds_dir, backgrounds[background_name.lower()])
         if os.path.exists(bg_path):
@@ -778,6 +793,11 @@ def main():
         print("  fractal-1 through fractal-40")
         print("  fractal-01 through fractal-40 (with leading zeros)")
         print()
+        print("Noise Textures (10 backgrounds):")
+        print("  noise-gray, noise-slate, noise-brown")
+        print("  noise-dark-green, noise-forest-green, noise-blue-green")
+        print("  noise-dark-blue, noise-purple, noise-more-purple, noise-maroon")
+        print()
         print("Aliases:")
         print("  blue        - Same as 'gradient'")
         print("  default     - Same as 'gradient'")
@@ -791,6 +811,7 @@ def main():
         print("Examples:")
         print("  ./scr-wrap image.png -b gradient")
         print("  ./scr-wrap image.png -b fractal-7")
+        print("  ./scr-wrap image.png -b noise-slate -s")
         print("  ./scr-wrap image.png -b mixtone -s")
         print("  ./scr-wrap image.png -b /path/to/custom-bg.jpg")
         print("  ./scr-wrap water*.png -b fractal-15  # Process multiple files")
