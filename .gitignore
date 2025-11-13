@@ -3,3 +3,9 @@
 .claudecheckpoints/
 .clauderc.local
 *.checkpoint
+
+# macOS
+.DS_Store
+
+# Backgrounds
+backgrounds/
