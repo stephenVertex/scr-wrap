@@ -82,6 +82,50 @@ def cleanup_tempfile(filepath):
             pass
 
 
+def parse_blur_region(region_str):
+    """Parse a blur region string 'x,y,w,h' into a tuple of integers.
+
+    Returns (x, y, w, h) or None if the format is invalid.
+    """
+    try:
+        parts = region_str.split(',')
+        if len(parts) != 4:
+            return None
+        x, y, w, h = map(int, parts)
+        if w <= 0 or h <= 0:
+            return None
+        return (x, y, w, h)
+    except ValueError:
+        return None
+
+
+def apply_blur_regions(image, blur_regions):
+    """Apply Gaussian blur to rectangular regions of an image.
+
+    blur_regions is a list of (x, y, w, h) tuples.
+    Modifies the image in place and returns it.
+    """
+    if not blur_regions:
+        return image
+
+    for x, y, w, h in blur_regions:
+        # Clamp region to image bounds
+        img_w, img_h = image.size
+        x0 = max(0, x)
+        y0 = max(0, y)
+        x1 = min(img_w, x + w)
+        y1 = min(img_h, y + h)
+
+        if x0 >= x1 or y0 >= y1:
+            continue
+
+        region = image.crop((x0, y0, x1, y1))
+        blurred_region = region.filter(ImageFilter.GaussianBlur(radius=10))
+        image.paste(blurred_region, (x0, y0))
+
+    return image
+
+
 def apply_preset(image, preset_name):
     """Resize final composite to preset dimensions."""
     target_size = PRESETS.get(preset_name)
@@ -392,7 +436,7 @@ def create_fade_edge(width, fade_height=80):
     
     return mask
 
-def create_browser_frame(screenshot_path, output_path=None, url="https://example.com", background_path=None, torn_edge=False, torn_natural=False, fade_edge=False, drop_shadow=False, preset=None):
+def create_browser_frame(screenshot_path, output_path=None, url="https://example.com", background_path=None, torn_edge=False, torn_natural=False, fade_edge=False, drop_shadow=False, preset=None, blur_regions=None):
     """
     Wrap a screenshot in a browser frame and save as a new image
     """
@@ -403,6 +447,10 @@ def create_browser_frame(screenshot_path, output_path=None, url="https://example
     except Exception as e:
         print(f"Error loading image: {e}")
         return False
+    
+    # Apply blur regions before framing
+    if blur_regions:
+        screenshot = apply_blur_regions(screenshot, blur_regions)
     
     # Browser frame dimensions
     frame_height = 96  # 20% shorter (120 * 0.8)
@@ -665,7 +713,7 @@ def create_browser_frame(screenshot_path, output_path=None, url="https://example
         print(f"Error saving image: {e}")
         return False
 
-def apply_effects_only(screenshot_path, output_path=None, background_path=None, torn_edge=False, torn_natural=False, fade_edge=False, drop_shadow=False, preset=None):
+def apply_effects_only(screenshot_path, output_path=None, background_path=None, torn_edge=False, torn_natural=False, fade_edge=False, drop_shadow=False, preset=None, blur_regions=None):
     """
     Apply effects to screenshot without browser frame wrapper
     """
@@ -676,6 +724,10 @@ def apply_effects_only(screenshot_path, output_path=None, background_path=None, 
     except Exception as e:
         print(f"Error loading image: {e}")
         return False
+    
+    # Apply blur regions before any effects
+    if blur_regions:
+        screenshot = apply_blur_regions(screenshot, blur_regions)
     
     # Start with the original screenshot
     processed_image = screenshot.copy()
@@ -877,6 +929,8 @@ def main():
                        help='Read screenshot from macOS clipboard (via pngpaste) instead of a file argument')
     parser.add_argument('--to-clipboard', action='store_true',
                        help='Write wrapped result back to macOS clipboard (via osascript) instead of saving to disk')
+    parser.add_argument('--blur', action='append', metavar='X,Y,W,H',
+                       help='Blur a rectangular region (x,y,width,height) with Gaussian blur. Repeat for multiple regions.')
     
     args = parser.parse_args()
     
@@ -953,6 +1007,16 @@ def main():
             print("Error: Cannot specify output file when processing multiple inputs")
             sys.exit(1)
     
+    # Parse blur regions
+    blur_regions = []
+    if args.blur:
+        for region_str in args.blur:
+            region = parse_blur_region(region_str)
+            if region is None:
+                print(f"Error: Invalid blur region format '{region_str}'. Expected x,y,w,h with positive width and height.", file=sys.stderr)
+                sys.exit(1)
+            blur_regions.append(region)
+
     total_success = True
     for input_file in input_files:
         if not os.path.exists(input_file):
@@ -964,9 +1028,9 @@ def main():
         
         print(f"Processing: {input_file}")
         if args.no_browser:
-            success = apply_effects_only(input_file, output_file, args.background, args.torn, args.torn_natural, args.fade, args.shadow, args.preset)
+            success = apply_effects_only(input_file, output_file, args.background, args.torn, args.torn_natural, args.fade, args.shadow, args.preset, blur_regions)
         else:
-            success = create_browser_frame(input_file, output_file, args.url, args.background, args.torn, args.torn_natural, args.fade, args.shadow, args.preset)
+            success = create_browser_frame(input_file, output_file, args.url, args.background, args.torn, args.torn_natural, args.fade, args.shadow, args.preset, blur_regions)
         
         if not success:
             total_success = False
