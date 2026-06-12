@@ -436,7 +436,7 @@ def create_fade_edge(width, fade_height=80):
     
     return mask
 
-def create_browser_frame(screenshot_path, output_path=None, url="https://example.com", background_path=None, torn_edge=False, torn_natural=False, fade_edge=False, drop_shadow=False, preset=None, blur_regions=None):
+def create_browser_frame(screenshot_path, output_path=None, url="https://example.com", background_path=None, torn_edge=False, torn_natural=False, fade_edge=False, drop_shadow=False, preset=None, blur_regions=None, frame_style="default"):
     """
     Wrap a screenshot in a browser frame and save as a new image
     """
@@ -465,65 +465,63 @@ def create_browser_frame(screenshot_path, output_path=None, url="https://example
     
     # Draw the browser header background
     draw = ImageDraw.Draw(framed_image)
-    
-    # Draw single toolbar background (Safari style - darker shade)
-    draw.rectangle([0, 0, new_width, frame_height], fill='#f0f0f0')
-    
-    # Draw traffic lights (Safari positioning - larger size)
-    traffic_light_y = frame_height // 2
-    traffic_light_radius = 10
-    
-    # Red light
-    draw.ellipse([28, traffic_light_y - traffic_light_radius, 
-                  28 + traffic_light_radius * 2, traffic_light_y + traffic_light_radius], 
-                 fill='#ff5f56')
-    
-    # Yellow light  
-    draw.ellipse([60, traffic_light_y - traffic_light_radius,
-                  60 + traffic_light_radius * 2, traffic_light_y + traffic_light_radius],
-                 fill='#ffbd2e')
-    
-    # Green light
-    draw.ellipse([92, traffic_light_y - traffic_light_radius,
-                  92 + traffic_light_radius * 2, traffic_light_y + traffic_light_radius],
-                 fill='#27ca3f')
-    
-    
-    # Address bar (Safari style - narrower to match reference)
-    address_bar_width = int(new_width * 0.35)  # About 35% of total width
-    address_bar_x = (new_width - address_bar_width) // 2  # Centered
-    address_bar_y = frame_height // 2 - 22  # Center vertically
-    address_bar_height = 44
-    
-    # Address bar with Safari styling
-    draw.rounded_rectangle([address_bar_x, address_bar_y, 
-                           address_bar_x + address_bar_width, address_bar_y + address_bar_height],
-                          radius=8, fill='#f5f5f5', outline='#d1d1d1')
-    
-    # Add URL text (centered in address bar)
-    try:
+
+    dark = frame_style == "browser-dark"
+    show_address_bar = frame_style in ("default", "browser-dark")
+    show_traffic_lights = frame_style != "window"
+
+    toolbar_bg = '#3a3a3c' if dark else '#f0f0f0'
+    frame_bg = '#2c2c2e' if dark else '#f6f6f6'
+    sep_color = '#555555' if dark else '#d1d1d1'
+    url_color = '#cccccc' if dark else '#666666'
+    addr_fill = '#4a4a4c' if dark else '#f5f5f5'
+    addr_outline = '#555555' if dark else '#d1d1d1'
+
+    framed_image.paste(Image.new('RGB', (new_width, new_height), frame_bg))
+    draw.rectangle([0, 0, new_width, frame_height], fill=toolbar_bg)
+
+    if show_traffic_lights:
+        traffic_light_y = frame_height // 2
+        traffic_light_radius = 10
+        draw.ellipse([28, traffic_light_y - traffic_light_radius,
+                      28 + traffic_light_radius * 2, traffic_light_y + traffic_light_radius],
+                     fill='#ff5f56')
+        draw.ellipse([60, traffic_light_y - traffic_light_radius,
+                      60 + traffic_light_radius * 2, traffic_light_y + traffic_light_radius],
+                     fill='#ffbd2e')
+        draw.ellipse([92, traffic_light_y - traffic_light_radius,
+                      92 + traffic_light_radius * 2, traffic_light_y + traffic_light_radius],
+                     fill='#27ca3f')
+
+    if show_address_bar:
+        address_bar_width = int(new_width * 0.35)
+        address_bar_x = (new_width - address_bar_width) // 2
+        address_bar_y = frame_height // 2 - 22
+        address_bar_height = 44
+
+        draw.rounded_rectangle([address_bar_x, address_bar_y,
+                               address_bar_x + address_bar_width, address_bar_y + address_bar_height],
+                              radius=8, fill=addr_fill, outline=addr_outline)
+
         try:
-            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 28)
+            try:
+                font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 28)
+            except:
+                font = ImageFont.load_default()
+
+            bbox = draw.textbbox((0, 0), url, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_x = address_bar_x + (address_bar_width - text_width) // 2
+
+            draw.text((text_x, address_bar_y + 8),
+                     url, fill=url_color, font=font)
         except:
-            font = ImageFont.load_default()
-        
-        # Calculate text width to center it
-        bbox = draw.textbbox((0, 0), url, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_x = address_bar_x + (address_bar_width - text_width) // 2
-        
-        draw.text((text_x, address_bar_y + 8), 
-                 url, fill='#666666', font=font)
-    except:
-        # Fallback for default font - approximate centering
-        text_width = len(url) * 6  # Rough estimate for default font
-        text_x = address_bar_x + (address_bar_width - text_width) // 2
-        draw.text((text_x, address_bar_y + 10), 
-                 url, fill='#666666')
-    
-    
-    # Draw bottom border of header
-    draw.line([(0, frame_height - 1), (new_width, frame_height - 1)], fill='#d1d1d1')
+            text_width = len(url) * 6
+            text_x = address_bar_x + (address_bar_width - text_width) // 2
+            draw.text((text_x, address_bar_y + 10),
+                     url, fill=url_color)
+
+    draw.line([(0, frame_height - 1), (new_width, frame_height - 1)], fill=sep_color)
     
     # Paste the screenshot below the frame
     framed_image.paste(screenshot, (0, frame_height))
@@ -923,7 +921,10 @@ def main():
     parser.add_argument('--list-backgrounds', action='store_true',
                        help='List all available background options and exit')
     parser.add_argument('--no-browser', action='store_true',
-                       help='Skip browser frame wrapper, apply only effects like drop shadow')
+                        help='Skip browser frame wrapper, apply only effects like drop shadow')
+    parser.add_argument('--frame', choices=['default', 'mac', 'browser-dark', 'window'],
+                        default='default',
+                        help='Frame style: default (light browser), mac (macOS traffic lights), browser-dark (dark browser), window (plain title bar)')
     parser.add_argument('--preset', choices=list(PRESETS.keys()),
                        help='Platform size preset: x (1600x900), linkedin (1200x627), og (1200x630), square (1080x1080), thumb (400x300)')
     parser.add_argument('--from-clipboard', action='store_true',
@@ -1036,7 +1037,12 @@ def main():
             output_file = args.output
         elif args.out_dir:
             base, ext = os.path.splitext(os.path.basename(input_file))
-            suffix = '.effects' if args.no_browser else '.wrapped'
+            if args.no_browser:
+                suffix = '.effects'
+            elif args.frame == 'default':
+                suffix = '.wrapped'
+            else:
+                suffix = f'.{args.frame}'
             output_file = os.path.join(args.out_dir, f"{base}{suffix}{ext}")
         else:
             output_file = None
@@ -1045,7 +1051,7 @@ def main():
         if args.no_browser:
             success = apply_effects_only(input_file, output_file, args.background, args.torn, args.torn_natural, args.fade, args.shadow, args.preset, blur_regions)
         else:
-            success = create_browser_frame(input_file, output_file, args.url, args.background, args.torn, args.torn_natural, args.fade, args.shadow, args.preset, blur_regions)
+            success = create_browser_frame(input_file, output_file, args.url, args.background, args.torn, args.torn_natural, args.fade, args.shadow, args.preset, blur_regions, frame_style=args.frame)
         
         if not success:
             total_success = False
