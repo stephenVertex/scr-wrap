@@ -907,6 +907,7 @@ def main():
     parser = argparse.ArgumentParser(description='Wrap screenshots in browser frames')
     parser.add_argument('input', nargs='*', help='Input screenshot file(s) or pattern')
     parser.add_argument('-o', '--output', help='Output file (only for single input, default: input.wrapped.ext)')
+    parser.add_argument('--out-dir', help='Output directory for batch processing (writes all wrapped files there)')
     parser.add_argument('-u', '--url', default='https://cloudfix.com', 
                        help='URL to display in address bar (default: https://cloudfix.com)')
     parser.add_argument('-b', '--background', 
@@ -1004,8 +1005,13 @@ def main():
             sys.exit(1)
         
         if args.output and len(input_files) > 1:
-            print("Error: Cannot specify output file when processing multiple inputs")
+            print("Error: Cannot specify -o when processing multiple inputs")
             sys.exit(1)
+        if args.output and args.out_dir:
+            print("Error: Cannot use -o and --out-dir together")
+            sys.exit(1)
+        if args.out_dir and not os.path.isdir(args.out_dir):
+            os.makedirs(args.out_dir, exist_ok=True)
     
     # Parse blur regions
     blur_regions = []
@@ -1018,13 +1024,22 @@ def main():
             blur_regions.append(region)
 
     total_success = True
+    processed_count = 0
+    total_output_size = 0
     for input_file in input_files:
         if not os.path.exists(input_file):
             print(f"Error: File '{input_file}' not found")
             total_success = False
             continue
         
-        output_file = args.output if len(input_files) == 1 else None
+        if args.output:
+            output_file = args.output
+        elif args.out_dir:
+            base, ext = os.path.splitext(os.path.basename(input_file))
+            suffix = '.effects' if args.no_browser else '.wrapped'
+            output_file = os.path.join(args.out_dir, f"{base}{suffix}{ext}")
+        else:
+            output_file = None
         
         print(f"Processing: {input_file}")
         if args.no_browser:
@@ -1036,12 +1051,20 @@ def main():
             total_success = False
             continue
         
+        processed_count += 1
+        if output_file and os.path.exists(output_file):
+            total_output_size += os.path.getsize(output_file)
+        
         if args.to_clipboard:
             base, ext = os.path.splitext(input_file)
             suffix = '.effects' if args.no_browser else '.wrapped'
             wrapped_path = output_file if output_file else f"{base}{suffix}{ext}"
             if not write_to_clipboard(wrapped_path):
                 total_success = False
+    
+    # Batch summary
+    if len(input_files) > 1:
+        print(f"\nBatch summary: {processed_count}/{len(input_files)} processed, total output size: {total_output_size:,} bytes")
     
     if clipboard_tmp:
         cleanup_tempfile(clipboard_tmp)
