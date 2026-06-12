@@ -10,6 +10,22 @@ import os
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import argparse
 
+# Platform preset dimensions (width, height)
+PRESETS = {
+    'x': (1600, 900),
+    'linkedin': (1200, 627),
+    'og': (1200, 630),
+    'square': (1080, 1080),
+    'thumb': (400, 300),
+}
+
+def apply_preset(image, preset_name):
+    """Resize final composite to preset dimensions."""
+    target_size = PRESETS.get(preset_name)
+    if not target_size:
+        return image
+    return image.resize(target_size, Image.Resampling.LANCZOS)
+
 def create_rounded_rectangle_mask(size, radius):
     """Create a mask for rounded corners"""
     width, height = size
@@ -313,7 +329,7 @@ def create_fade_edge(width, fade_height=80):
     
     return mask
 
-def create_browser_frame(screenshot_path, output_path=None, url="https://example.com", background_path=None, torn_edge=False, torn_natural=False, fade_edge=False, drop_shadow=False):
+def create_browser_frame(screenshot_path, output_path=None, url="https://example.com", background_path=None, torn_edge=False, torn_natural=False, fade_edge=False, drop_shadow=False, preset=None):
     """
     Wrap a screenshot in a browser frame and save as a new image
     """
@@ -568,6 +584,10 @@ def create_browser_frame(screenshot_path, output_path=None, url="https://example
         except Exception as e:
             print(f"Warning: Could not apply background ({e}), using plain window")
     
+    # Apply preset sizing if requested
+    if preset:
+        framed_image = apply_preset(framed_image, preset)
+    
     # Determine output filename
     if output_path is None:
         base, ext = os.path.splitext(screenshot_path)
@@ -582,7 +602,7 @@ def create_browser_frame(screenshot_path, output_path=None, url="https://example
         print(f"Error saving image: {e}")
         return False
 
-def apply_effects_only(screenshot_path, output_path=None, background_path=None, torn_edge=False, torn_natural=False, fade_edge=False, drop_shadow=False):
+def apply_effects_only(screenshot_path, output_path=None, background_path=None, torn_edge=False, torn_natural=False, fade_edge=False, drop_shadow=False, preset=None):
     """
     Apply effects to screenshot without browser frame wrapper
     """
@@ -750,6 +770,10 @@ def apply_effects_only(screenshot_path, output_path=None, background_path=None, 
         except Exception as e:
             print(f"Warning: Could not apply background ({e}), using plain image")
     
+    # Apply preset sizing if requested
+    if preset:
+        processed_image = apply_preset(processed_image, preset)
+    
     # Determine output filename
     if output_path is None:
         base, ext = os.path.splitext(screenshot_path)
@@ -784,6 +808,8 @@ def main():
                        help='List all available background options and exit')
     parser.add_argument('--no-browser', action='store_true',
                        help='Skip browser frame wrapper, apply only effects like drop shadow')
+    parser.add_argument('--preset', choices=list(PRESETS.keys()),
+                       help='Platform size preset: x (1600x900), linkedin (1200x627), og (1200x630), square (1080x1080), thumb (400x300)')
     
     args = parser.parse_args()
     
@@ -868,9 +894,9 @@ def main():
         
         print(f"Processing: {input_file}")
         if args.no_browser:
-            success = apply_effects_only(input_file, output_file, args.background, args.torn, args.torn_natural, args.fade, args.shadow)
+            success = apply_effects_only(input_file, output_file, args.background, args.torn, args.torn_natural, args.fade, args.shadow, args.preset)
         else:
-            success = create_browser_frame(input_file, output_file, args.url, args.background, args.torn, args.torn_natural, args.fade, args.shadow)
+            success = create_browser_frame(input_file, output_file, args.url, args.background, args.torn, args.torn_natural, args.fade, args.shadow, args.preset)
         
         if not success:
             total_success = False
