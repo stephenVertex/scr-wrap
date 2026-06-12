@@ -932,7 +932,9 @@ def main():
     parser.add_argument('--to-clipboard', action='store_true',
                        help='Write wrapped result back to macOS clipboard (via osascript) instead of saving to disk')
     parser.add_argument('--blur', action='append', metavar='X,Y,W,H',
-                       help='Blur a rectangular region (x,y,width,height) with Gaussian blur. Repeat for multiple regions.')
+                        help='Blur a rectangular region (x,y,width,height) with Gaussian blur. Repeat for multiple regions.')
+    parser.add_argument('--numbered', metavar='STUB',
+                        help='Name outputs as STUB-1.png, STUB-2.png, ... (n 1-based by mtime, oldest=1, no zero-padding). Compatible with --out-dir.')
     
     args = parser.parse_args()
     
@@ -1011,6 +1013,9 @@ def main():
         if args.output and args.out_dir:
             print("Error: Cannot use -o and --out-dir together")
             sys.exit(1)
+        if args.numbered and args.output:
+            print("Error: Cannot use -o and --numbered together")
+            sys.exit(1)
         if args.out_dir and not os.path.isdir(args.out_dir):
             os.makedirs(args.out_dir, exist_ok=True)
     
@@ -1024,10 +1029,13 @@ def main():
                 sys.exit(1)
             blur_regions.append(region)
 
+    if args.numbered:
+        input_files.sort(key=lambda f: os.path.getmtime(f))
+
     total_success = True
     processed_count = 0
     total_output_size = 0
-    for input_file in input_files:
+    for idx, input_file in enumerate(input_files):
         if not os.path.exists(input_file):
             print(f"Error: File '{input_file}' not found")
             total_success = False
@@ -1035,6 +1043,10 @@ def main():
         
         if args.output:
             output_file = args.output
+        elif args.numbered:
+            n = idx + 1
+            fname = f"{args.numbered}-{n}.png"
+            output_file = os.path.join(args.out_dir, fname) if args.out_dir else fname
         elif args.out_dir:
             base, ext = os.path.splitext(os.path.basename(input_file))
             if args.no_browser:
