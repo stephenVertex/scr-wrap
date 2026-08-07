@@ -22,6 +22,40 @@ PRESETS = {
     'thumb': (400, 300),
 }
 
+PRIME_GUIDE = """scr-wrap — screenshot wrapping utility
+
+What it does
+  Wraps screenshots in browser/window frames and can add backgrounds, shadows,
+  torn/fade edges, blur regions, or fixed-size platform presets.
+
+Command surface
+  scr-wrap prime                         Show this agent guide.
+  scr-wrap [INPUT ...] [OPTIONS]         Process files or glob patterns.
+  scr-wrap --list-backgrounds            List named background choices.
+  scr-wrap --from-clipboard [OPTIONS]    Read a PNG from the macOS clipboard.
+  scr-wrap --help                        Show the complete CLI help.
+
+Common options
+  -o, --output FILE       Single-input output (default: INPUT.wrapped.EXT).
+  --out-dir DIR           Batch output directory.
+  --numbered STUB         STUB-1.png, STUB-2.png, ... (oldest mtime first).
+  -b, --background NAME|FILE  Named background or custom image path.
+  --frame STYLE            default, mac, browser-dark, or window.
+  --no-browser             Apply effects without adding a browser frame.
+  -u, --url URL            Address-bar URL (default: https://cloudfix.com).
+  -t/--torn  -t2/--torn-natural  -f/--fade  -s/--shadow
+  --preset NAME            x, linkedin, og, square, or thumb.
+  --blur X,Y,W,H           Repeatable; width and height must be positive.
+  --to-clipboard            Copy each result to the macOS clipboard.
+
+Conventions and gotchas
+  INPUT accepts paths and glob patterns; quote a glob to let scr-wrap expand it.
+  -o is single-input only and cannot be combined with --out-dir or --numbered.
+  --numbered works with --out-dir, has no zero-padding, and sorts by mtime.
+  --from-clipboard needs macOS pngpaste; --to-clipboard needs osascript.
+  Use --list-backgrounds to inspect installed names, or pass a background path.
+"""
+
 def read_from_clipboard():
     """Read a PNG image from the macOS clipboard via pngpaste.
 
@@ -902,6 +936,10 @@ def apply_effects_only(screenshot_path, output_path=None, background_path=None, 
         return False
 
 def main():
+    if sys.argv[1:] == ['prime']:
+        print(PRIME_GUIDE)
+        return
+
     parser = argparse.ArgumentParser(description='Wrap screenshots in browser frames')
     parser.add_argument('input', nargs='*', help='Input screenshot file(s) or pattern')
     parser.add_argument('-o', '--output', help='Output file (only for single input, default: input.wrapped.ext)')

@@ -5,10 +5,14 @@ A Python utility for wrapping screenshots in browser frames with various backgro
 ## Usage
 
 ```bash
+./scr-wrap prime                    # Print the agent-facing usage guide
 ./scr-wrap screenshot.png -b gradient
 ./scr-wrap screenshot.png -b fractal-7 -s
 ./scr-wrap image1.png image2.png -b mixtone
 ```
+
+Run `./scr-wrap prime` before first use in an agent session, or after context
+compaction, to refresh the tool's command surface and conventions.
 
 ## Background Options
 
